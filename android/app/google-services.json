@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "249611086911",
+    "project_id": "billetera-9f01e",
+    "storage_bucket": "billetera-9f01e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:249611086911:android:0516d9112b3bd6695b5c8a",
+        "android_client_info": {
+          "package_name": "com.example.billetera"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC2_xMCAENG3Zo8jSJjJPsQde6VIMWKvhQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
