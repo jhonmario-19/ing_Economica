@@ -21,12 +21,18 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+       backgroundColor: Colors.grey[100],
       appBar: AppBar(
-        title: Text('Detalles del Préstamo'),
+        title: Text('Detalles del Préstamo'
+            , style: TextStyle(color: Colors.white)),
         backgroundColor: AppColors.primaryColor,
+        
         foregroundColor: Colors.white,
         elevation: 0,
+        automaticallyImplyLeading: true, // ← Esta línea es clave
+        iconTheme: IconThemeData(
+          color: Colors.white, // ← Asegura contraste
+        ),
       ),
       body: SingleChildScrollView(
         child: Column(

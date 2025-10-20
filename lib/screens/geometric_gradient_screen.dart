@@ -137,9 +137,15 @@ class _GeometricGradientScreenState extends State<GeometricGradientScreen> {
     return Scaffold(
       backgroundColor: Colors.grey[100],
       appBar: AppBar(
-        title: Text('Gradiente Geométrico'),
+        title: const Text('Gradiente Geométrico'
+        , style: TextStyle(color: Colors.white),
+            textAlign: TextAlign.center,),
         backgroundColor: _primaryColor,
         elevation: 0,
+        automaticallyImplyLeading: true, // ← Esta línea es clave
+        iconTheme: const IconThemeData(
+          color: Colors.white, // ← Asegura contraste
+        ),
       ),
       body: RefreshIndicator(
         onRefresh: () async {},

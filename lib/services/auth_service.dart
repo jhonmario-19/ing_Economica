@@ -1,13 +1,13 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:billetera/models/user_model.dart';
-import 'package:billetera/services/biometric_auth_service.dart';
+import 'package:billetera/services/biometric_service.dart';
 import 'dart:async';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final BiometricAuthService _biometricService = BiometricAuthService();
+  final BiometricService _biometricService = BiometricService();
 
   // Método existente de registro (sin cambios)
   Future<User?> registerWithCedulaAndPassword(
@@ -218,8 +218,8 @@ class AuthService {
         throw Exception('La autenticación biométrica no está habilitada');
       }
 
-      // Obtener credenciales almacenadas (incluye autenticación biométrica)
-      Map<String, String>? credentials = await _biometricService.getStoredCredentials();
+      // CORRECCIÓN: Usar el método correcto
+      Map<String, String>? credentials = await _biometricService.getBiometricCredentials(); // ✅ Cambiado de getStoredCredentials a getBiometricCredentials
       
       if (credentials == null) {
         throw Exception('No se pudieron obtener las credenciales');
@@ -239,10 +239,13 @@ class AuthService {
     }
   }
 
-  // NUEVO: Habilitar autenticación biométrica después del login
+  // CORREGIR: Habilitar autenticación biométrica
   Future<bool> enableBiometricAuth(String cedula, String password) async {
     try {
-      return await _biometricService.enableBiometric(cedula, password);
+      return await _biometricService.enableBiometric(
+        cedula: cedula, // ✅ Agregar nombre del parámetro
+        password: password,
+      );
     } catch (e) {
       print('Error habilitando biometría: $e');
       return false;

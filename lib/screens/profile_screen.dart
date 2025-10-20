@@ -57,13 +57,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _checkBiometricStatus() async {
-    final canCheck = await _biometricService.canCheckBiometrics();
-    final isSupported = await _biometricService.isDeviceSupported();
-    final isEnabled = await _biometricService.isBiometricEnabled();
-    final biometricType = await _biometricService.getBiometricTypeDescription();
+    final isAvailable = await _authService.isBiometricAvailable();
+    final isEnabled = await _authService.isBiometricEnabled();
+    final biometricType = await _authService.getBiometricTypeDescription();
 
     setState(() {
-      _biometricAvailable = canCheck || isSupported;
+      _biometricAvailable = isAvailable;
       _biometricEnabled = isEnabled;
       _biometricType = biometricType;
     });
@@ -71,11 +70,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _toggleBiometric(bool value) async {
     if (value) {
-      // Activar biometría - necesitamos la contraseña
-      _showPasswordDialog();
+      // Activar biometría
+      await _enableBiometric();
     } else {
       // Desactivar biometría
-      _showDisableBiometricDialog();
+      await _disableBiometric();
     }
   }
 
@@ -171,35 +170,104 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Future<void> _enableBiometric(String password) async {
+  Future<void> _enableBiometric([String? providedPassword]) async {
+    String? password = providedPassword;
+
+    // If no password provided, ask the user via dialog
+    if (password == null || password.isEmpty) {
+      final passwordController = TextEditingController();
+      
+      bool? result = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppStyles.radiusL),
+            ),
+            title: Row(
+              children: [
+                Icon(Icons.fingerprint, color: AppColors.accentColor),
+                SizedBox(width: 12),
+                Text('Activar $_biometricType'),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Ingresa tu contraseña para configurar $_biometricType'),
+                SizedBox(height: 16),
+                TextFormField(
+                  controller: passwordController,
+                  obscureText: true,
+                  decoration: InputDecoration(
+                    labelText: 'Contraseña',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text('Continuar'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (result == true && passwordController.text.isNotEmpty) {
+        password = passwordController.text;
+      } else {
+        // User cancelled or did not enter a password
+        return;
+      }
+    }
+
+    // At this point we have a non-null, non-empty password
     setState(() {
       _isLoading = true;
     });
 
-    bool success = await _biometricService.enableBiometric(
-      cedula: widget.user.cedula,
-      password: password,
-    );
+    try {
+      bool success = await _authService.enableBiometricAuth(
+        widget.user.cedula,
+        password!,
+      );
 
-    setState(() {
-      _isLoading = false;
-      _biometricEnabled = success;
-    });
-
-    if (success) {
+      if (success) {
+        setState(() {
+          _biometricEnabled = true;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ $_biometricType activada correctamente'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error al activar $_biometricType'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        CommonWidgets.buildCustomSnackBar(
-          message: '¡$_biometricType activada correctamente!',
-          type: SnackBarType.success,
+        SnackBar(
+          content: Text('❌ Error: $e'),
+          backgroundColor: Colors.red,
         ),
       );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        CommonWidgets.buildCustomSnackBar(
-          message: 'No se pudo activar $_biometricType. Verifica tu contraseña.',
-          type: SnackBarType.error,
-        ),
-      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
@@ -254,23 +322,56 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _disableBiometric() async {
-    setState(() {
-      _isLoading = true;
-    });
-
-    await _biometricService.disableBiometric();
-
-    setState(() {
-      _isLoading = false;
-      _biometricEnabled = false;
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      CommonWidgets.buildCustomSnackBar(
-        message: '$_biometricType desactivada correctamente',
-        type: SnackBarType.success,
-      ),
+    bool? result = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Desactivar $_biometricType'),
+          content: Text('¿Estás seguro de que deseas desactivar $_biometricType?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text('Cancelar'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              onPressed: () => Navigator.pop(context, true),
+              child: Text('Desactivar'),
+            ),
+          ],
+        );
+      },
     );
+
+    if (result == true) {
+      setState(() {
+        _isLoading = true;
+      });
+
+      try {
+        await _authService.disableBiometricAuth();
+        setState(() {
+          _biometricEnabled = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ $_biometricType desactivada'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error al desactivar: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      } finally {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   Future<void> _updateProfile() async {
@@ -562,10 +663,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ],
               ),
             const SizedBox(height: AppStyles.spacingL),
-            if (!_isEditing) ...[
-              _buildBiometricSettings(),
-              const SizedBox(height: AppStyles.spacingL),
-            ],
+            
             if (!_isEditing)
               CommonWidgets.buildCustomButton(
                 text: 'Cerrar Sesión',
@@ -580,117 +678,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildBiometricSettings() {
-  return FutureBuilder<Map<String, dynamic>>(
-    future: _getBiometricStatus(),
-    builder: (context, snapshot) {
-      if (!snapshot.hasData) {
-        return const SizedBox.shrink();
-      }
-
-      final data = snapshot.data!;
-      final isAvailable = data['isAvailable'] as bool;
-      final isEnabled = data['isEnabled'] as bool;
-      final biometricType = data['biometricType'] as String;
-
-      if (!isAvailable) {
-        return const SizedBox.shrink();
-      }
-
-      return Container(
-        margin: const EdgeInsets.symmetric(horizontal: AppStyles.spacingL),
-        decoration: AppStyles.primaryCardDecoration,
-        child: Padding(
-          padding: const EdgeInsets.all(AppStyles.spacingL),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              CommonWidgets.buildSectionHeader(
-                title: 'Seguridad',
-                subtitle: 'Configuración de autenticación',
-              ),
-              const SizedBox(height: AppStyles.spacingL),
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(AppStyles.spacingM),
-                    decoration: BoxDecoration(
-                      color: AppColors.accentColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(AppStyles.radiusM),
-                    ),
-                    child: Icon(
-                      Icons.fingerprint,
-                      color: AppColors.accentColor,
-                      size: 28,
-                    ),
-                  ),
-                  const SizedBox(width: AppStyles.spacingL),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          biometricType,
-                          style: AppStyles.subheadingMedium.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: AppStyles.spacingXS),
-                        Text(
-                          isEnabled
-                              ? 'Habilitado para inicio rápido'
-                              : 'Deshabilitado',
-                          style: AppStyles.bodySmall.copyWith(
-                            color: isEnabled
-                                ? AppColors.successColor
-                                : AppColors.textSecondaryColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Switch(
-                    value: isEnabled,
-                    onChanged: (value) => _toggleBiometricAuth(value),
-                    activeColor: AppColors.accentColor,
-                  ),
-                ],
-              ),
-              if (isEnabled) ...[
-                const SizedBox(height: AppStyles.spacingM),
-                Container(
-                  padding: const EdgeInsets.all(AppStyles.spacingM),
-                  decoration: BoxDecoration(
-                    color: AppColors.successLight,
-                    borderRadius: BorderRadius.circular(AppStyles.radiusS),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.check_circle,
-                        color: AppColors.successColor,
-                        size: 16,
-                      ),
-                      const SizedBox(width: AppStyles.spacingS),
-                      Expanded(
-                        child: Text(
-                          'Puedes iniciar sesión usando $biometricType en tu próximo acceso',
-                          style: AppStyles.bodySmall.copyWith(
-                            color: AppColors.successColor,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      );
-    },
-  );
-}
 
 // Método para obtener el estado de la biometría
 Future<Map<String, dynamic>> _getBiometricStatus() async {
@@ -881,56 +868,40 @@ Future<void> _toggleBiometricAuth(bool enable) async {
 
 
   Widget _buildBiometricOption() {
-    return Container(
-      decoration: AppStyles.primaryCardDecoration,
-      padding: const EdgeInsets.all(AppStyles.spacingL),
-      child: Row(
-        children: [
-          Container(
-            padding: EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: _biometricEnabled 
-                  ? AppColors.successLight 
-                  : AppColors.accentColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(AppStyles.radiusM),
-            ),
-            child: Icon(
-              Icons.fingerprint,
-              color: _biometricEnabled 
-                  ? AppColors.successColor 
-                  : AppColors.accentColor,
-              size: 28,
-            ),
-          ),
-          const SizedBox(width: AppStyles.spacingL),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _biometricType,
-                  style: AppStyles.subheadingMedium.copyWith(
-                    fontWeight: FontWeight.w600,
+    if (!_biometricAvailable) return SizedBox.shrink();
+    
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(Icons.fingerprint, size: 40, color: Colors.blue),
+            SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _biometricType,
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _biometricEnabled 
-                      ? 'Acceso rápido activado' 
-                      : 'Inicia sesión más rápido',
-                  style: AppStyles.bodySmall.copyWith(
-                    color: AppColors.textSecondaryColor,
+                  SizedBox(height: 4),
+                  Text(
+                    _biometricEnabled ? 'Activado' : 'Desactivado',
+                    style: TextStyle(
+                      color: _biometricEnabled ? Colors.green : Colors.grey,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          Switch(
-            value: _biometricEnabled,
-            onChanged: _isLoading ? null : _toggleBiometric,
-            activeColor: AppColors.successColor,
-          ),
-        ],
+            Switch(
+              value: _biometricEnabled,
+              onChanged: _isLoading ? null : _toggleBiometric,
+              activeColor: Colors.green,
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -60,9 +60,15 @@ class _LoanManagementScreenState extends State<LoanManagementScreen> {
     return Scaffold(
       backgroundColor: Colors.grey[100],
       appBar: AppBar(
-        title: Text('Mis Préstamos'),
+        title: const Text('Mis Préstamos'
+            , style: TextStyle(color: Colors.white),
+            textAlign: TextAlign.center,),
         backgroundColor: AppColors.primaryColor,
         foregroundColor: Colors.white,
+        automaticallyImplyLeading: true, // ← Esta línea es clave
+        iconTheme: const IconThemeData(
+          color: Colors.white, // ← Asegura contraste
+        ),
         elevation: 0,
       ),
       body: _isLoading

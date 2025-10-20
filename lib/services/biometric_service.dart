@@ -14,17 +14,35 @@ class BiometricService {
 
   Future<bool> canCheckBiometrics() async {
     try {
-      return await _auth.canCheckBiometrics;
-    } on PlatformException {
+      final bool canCheck = await _auth.canCheckBiometrics;
+      debugPrint('📱 canCheckBiometrics: $canCheck');
+      return canCheck;
+    } on PlatformException catch (e) {
+      debugPrint('❌ Error en canCheckBiometrics: ${e.message}');
       return false;
     }
   }
 
   Future<bool> isDeviceSupported() async {
     try {
-      return await _auth.isDeviceSupported();
-    } on PlatformException {
+      final bool isSupported = await _auth.isDeviceSupported();
+      debugPrint('📱 isDeviceSupported: $isSupported');
+      return isSupported;
+    } on PlatformException catch (e) {
+      debugPrint('❌ Error en isDeviceSupported: ${e.message}');
       return false;
+    }
+  }
+
+  Future<List<BiometricType>> getAvailableBiometrics() async {
+    try {
+      final List<BiometricType> availableBiometrics = 
+          await _auth.getAvailableBiometrics();
+      debugPrint('🔍 Biométricas disponibles: $availableBiometrics');
+      return availableBiometrics;
+    } on PlatformException catch (e) {
+      debugPrint('❌ Error obteniendo biométricas: ${e.message}');
+      return [];
     }
   }
 
@@ -32,25 +50,34 @@ class BiometricService {
     try {
       final ced = await _storage.read(key: _keyCedula);
       final pwd = await _storage.read(key: _keyPassword);
-      return (ced != null && pwd != null);
-    } catch (_) {
+      final hasCredentials = (ced != null && pwd != null);
+      debugPrint('🔐 Tiene credenciales guardadas: $hasCredentials');
+      return hasCredentials;
+    } catch (e) {
+      debugPrint('❌ Error verificando credenciales: $e');
       return false;
     }
   }
 
   Future<String> getBiometricTypeDescription() async {
     try {
-      final types = await _auth.getAvailableBiometrics();
-      if (types.contains(BiometricType.fingerprint)) {
-        return 'Huella dactilar';
-      } else if (types.contains(BiometricType.face)) {
+      final types = await getAvailableBiometrics();
+      
+      if (types.isEmpty) {
+        return 'Biometría';
+      }
+      
+      if (types.contains(BiometricType.face)) {
         return 'Face ID';
+      } else if (types.contains(BiometricType.fingerprint)) {
+        return 'Huella dactilar';
       } else if (types.contains(BiometricType.iris)) {
-        return 'Iris';
+        return 'Reconocimiento de iris';
       } else {
         return 'Biometría';
       }
-    } catch (_) {
+    } catch (e) {
+      debugPrint('❌ Error obteniendo tipo de biometría: $e');
       return 'Biometría';
     }
   }
@@ -58,87 +85,176 @@ class BiometricService {
   Future<bool> isBiometricEnabled() async {
     try {
       final enabled = await _storage.read(key: _keyEnabled);
-      return enabled == 'true';
-    } catch (_) {
+      final isEnabled = enabled == 'true';
+      debugPrint('✅ Biometría habilitada: $isEnabled');
+      return isEnabled;
+    } catch (e) {
+      debugPrint('❌ Error verificando si está habilitada: $e');
       return false;
     }
   }
 
-  /// Habilita biometría: primero solicita autenticación biométrica y si pasa,
-  /// guarda cedula + password en secure storage.
   Future<bool> enableBiometric({
     required String cedula,
     required String password,
     String localizedReason = 'Autentícate para activar acceso biométrico',
   }) async {
     try {
-      final bool available = await isDeviceSupported() || await canCheckBiometrics();
-      if (!available) return false;
+      debugPrint('🔄 Iniciando habilitación de biometría...');
+      
+      // Verificar disponibilidad
+      final bool canCheck = await canCheckBiometrics();
+      final bool isSupported = await isDeviceSupported();
+      
+      debugPrint('📱 canCheck: $canCheck, isSupported: $isSupported');
+      
+      if (!canCheck && !isSupported) {
+        debugPrint('❌ Dispositivo no soporta biometría');
+        return false;
+      }
 
+      // Verificar que hay biométricas disponibles
+      final List<BiometricType> availableBiometrics = await getAvailableBiometrics();
+      if (availableBiometrics.isEmpty) {
+        debugPrint('❌ No hay sensores biométricos disponibles');
+        return false;
+      }
+
+      debugPrint('✅ Sensores disponibles: $availableBiometrics');
+
+      // Solicitar autenticación biométrica
+      debugPrint('🔐 Solicitando autenticación biométrica...');
       final bool authenticated = await _authenticate(localizedReason);
-      if (!authenticated) return false;
+      
+      if (!authenticated) {
+        debugPrint('❌ Autenticación biométrica cancelada o fallida');
+        return false;
+      }
 
+      debugPrint('✅ Autenticación biométrica exitosa');
+
+      // Guardar credenciales de forma segura
       await _storage.write(key: _keyCedula, value: cedula);
       await _storage.write(key: _keyPassword, value: password);
       await _storage.write(key: _keyEnabled, value: 'true');
+
+      debugPrint('✅ Credenciales guardadas correctamente');
+      debugPrint('✅ Biometría habilitada exitosamente');
+      
       return true;
     } catch (e) {
-      debugPrint('enableBiometric error: $e');
+      debugPrint('❌ Error habilitando biometría: $e');
       return false;
     }
   }
 
-  /// Intenta obtener las credenciales almacenadas después de autenticar biométricamente.
-  /// Devuelve null si falla o usuario canceló.
   Future<Map<String, String>?> getBiometricCredentials({
     String localizedReason = 'Autentícate para iniciar sesión',
   }) async {
     try {
+      debugPrint('🔄 Intentando obtener credenciales con biometría...');
+      
+      // Verificar si está habilitada
       final enabled = await isBiometricEnabled();
-      if (!enabled) return null;
+      if (!enabled) {
+        debugPrint('❌ Biometría no está habilitada');
+        return null;
+      }
 
+      // Autenticar
+      debugPrint('🔐 Solicitando autenticación biométrica...');
       final bool authenticated = await _authenticate(localizedReason);
-      if (!authenticated) return null;
+      
+      if (!authenticated) {
+        debugPrint('❌ Autenticación biométrica cancelada o fallida');
+        return null;
+      }
 
+      debugPrint('✅ Autenticación biométrica exitosa');
+
+      // Leer credenciales
       final ced = await _storage.read(key: _keyCedula);
       final pwd = await _storage.read(key: _keyPassword);
 
-      if (ced == null || pwd == null) return null;
+      if (ced == null || pwd == null) {
+        debugPrint('❌ No se encontraron credenciales guardadas');
+        return null;
+      }
 
+      debugPrint('✅ Credenciales obtenidas correctamente');
       return {'cedula': ced, 'password': pwd};
     } catch (e) {
-      debugPrint('getBiometricCredentials error: $e');
+      debugPrint('❌ Error obteniendo credenciales: $e');
       return null;
     }
   }
 
   Future<void> disableBiometric() async {
     try {
+      debugPrint('🔄 Deshabilitando biometría...');
       await _storage.delete(key: _keyCedula);
       await _storage.delete(key: _keyPassword);
       await _storage.delete(key: _keyEnabled);
+      debugPrint('✅ Biometría deshabilitada correctamente');
     } catch (e) {
-      debugPrint('disableBiometric error: $e');
+      debugPrint('❌ Error deshabilitando biometría: $e');
     }
   }
 
   Future<bool> _authenticate(String localizedReason) async {
     try {
-      final bool canAuth = await (_auth.isDeviceSupported());
-      if (!canAuth && !(await _auth.canCheckBiometrics)) return false;
+      debugPrint('🔐 Llamando a authenticate...');
+      
+      // Verificar disponibilidad antes de autenticar
+      final bool canAuthenticate = await _auth.canCheckBiometrics || 
+                                   await _auth.isDeviceSupported();
+      
+      if (!canAuthenticate) {
+        debugPrint('❌ No se puede autenticar - dispositivo no soportado');
+        return false;
+      }
 
-      return await _auth.authenticate(
+      // MEJORA: Configuración más compatible
+      final bool didAuthenticate = await _auth.authenticate(
         localizedReason: localizedReason,
         options: const AuthenticationOptions(
-          biometricOnly: true,
-          stickyAuth: false,
+          stickyAuth: false, // Cambiado a false para mejor compatibilidad
+          biometricOnly: false, // Permitir fallback a PIN/patrón
+          useErrorDialogs: true,
+          sensitiveTransaction: false,
         ),
       );
+
+      debugPrint('✅ Resultado de autenticación: $didAuthenticate');
+      return didAuthenticate;
+      
     } on PlatformException catch (e) {
-      debugPrint('LocalAuth PlatformException: $e');
+      debugPrint('❌ PlatformException en authenticate: ${e.code} - ${e.message}');
+      
+      // Manejar códigos de error específicos
+      switch (e.code) {
+        case 'no_fragment_activity':
+          debugPrint('❌ ERROR CRÍTICO: MainActivity debe extender FlutterFragmentActivity');
+          break;
+        case 'NotAvailable':
+          debugPrint('❌ Biometría no disponible en el dispositivo');
+          break;
+        case 'NotEnrolled':
+          debugPrint('❌ No hay huellas registradas en el dispositivo');
+          break;
+        case 'LockedOut':
+          debugPrint('❌ Biometría bloqueada temporalmente');
+          break;
+        case 'PermanentlyLockedOut':
+          debugPrint('❌ Biometría bloqueada permanentemente');
+          break;
+        default:
+          debugPrint('❌ Error desconocido: ${e.code}');
+      }
+      
       return false;
     } catch (e) {
-      debugPrint('LocalAuth unknown error: $e');
+      debugPrint('❌ Error desconocido en authenticate: $e');
       return false;
     }
   }
