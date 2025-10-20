@@ -1,13 +1,15 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:billetera/models/user_model.dart';
+import 'package:billetera/services/biometric_auth_service.dart';
 import 'dart:async';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final BiometricAuthService _biometricService = BiometricAuthService();
 
-  // Registro corregido para evitar el error PigeonUserDetails
+  // Método existente de registro (sin cambios)
   Future<User?> registerWithCedulaAndPassword(
       UserModel user, String password) async {
     
@@ -28,7 +30,7 @@ class AuthService {
         );
       }
 
-      // 2. Crear usuario en Firebase Auth de forma síncrona
+      // 2. Crear usuario en Firebase Auth
       print('🔄 Creando usuario en Firebase Auth...');
       
       UserCredential result = await _auth.createUserWithEmailAndPassword(
@@ -41,7 +43,7 @@ class AuthService {
       if (createdUser != null) {
         print('✅ Usuario creado en Auth: ${createdUser.uid}');
         
-        // 3. Guardar en Firestore inmediatamente después
+        // 3. Guardar en Firestore
         await _saveUserToFirestore(createdUser, user);
         
         return createdUser;
@@ -52,7 +54,6 @@ class AuthService {
     } on FirebaseAuthException catch (e) {
       print('Firebase Auth Error: ${e.code} - ${e.message}');
       
-      // Mapear errores específicos
       switch (e.code) {
         case 'email-already-in-use':
           throw Exception('Este correo electrónico ya está registrado');
@@ -69,7 +70,6 @@ class AuthService {
     } catch (e) {
       print('Error general: ${e.toString()}');
       
-      // Verificar si hay un usuario creado que necesita limpieza
       try {
         User? currentUser = _auth.currentUser;
         if (currentUser != null && createdUser?.uid == currentUser.uid) {
@@ -80,7 +80,6 @@ class AuthService {
         print('Error en limpieza: $cleanupError');
       }
       
-      // Re-lanzar el error original si es una excepción conocida
       if (e is Exception) {
         rethrow;
       }
@@ -89,7 +88,6 @@ class AuthService {
     }
   }
   
-  // Método separado para guardar en Firestore con mejor manejo de errores
   Future<void> _saveUserToFirestore(User firebaseUser, UserModel user) async {
     try {
       user.uid = firebaseUser.uid;
@@ -108,12 +106,10 @@ class AuthService {
       
       print('🔄 Guardando usuario en Firestore...');
       
-      // Guardar con timeout y reintentos
       await _firestoreWriteWithRetry(firebaseUser.uid, userData);
       
       print('✅ Usuario guardado en Firestore');
       
-      // Verificar que se guardó
       await _verifyFirestoreSave(firebaseUser.uid);
       
     } catch (e) {
@@ -122,7 +118,6 @@ class AuthService {
     }
   }
   
-  // Método para escribir en Firestore con reintentos
   Future<void> _firestoreWriteWithRetry(String uid, Map<String, dynamic> userData, {int maxRetries = 3}) async {
     for (int i = 0; i < maxRetries; i++) {
       try {
@@ -131,18 +126,17 @@ class AuthService {
             .doc(uid)
             .set(userData)
             .timeout(Duration(seconds: 10));
-        return; // Éxito, salir del bucle
+        return;
       } catch (e) {
         print('Intento ${i + 1} falló: $e');
         if (i == maxRetries - 1) {
-          rethrow; // Último intento, re-lanzar error
+          rethrow;
         }
-        await Future.delayed(Duration(seconds: 2)); // Esperar antes del siguiente intento
+        await Future.delayed(Duration(seconds: 2));
       }
     }
   }
   
-  // Verificar guardado en Firestore
   Future<void> _verifyFirestoreSave(String uid) async {
     try {
       await Future.delayed(Duration(milliseconds: 500));
@@ -168,7 +162,7 @@ class AuthService {
     }
   }
 
-  // Login sin cambios (pero con mejor manejo de errores)
+  // Login tradicional con cédula y contraseña
   Future<User?> signInWithCedulaAndPassword(
       String cedula, String password) async {
     try {
@@ -213,6 +207,73 @@ class AuthService {
       }
       throw Exception('Error inesperado en el inicio de sesión');
     }
+  }
+
+  // NUEVO: Login con biometría
+  Future<User?> signInWithBiometric() async {
+    try {
+      // Verificar si la biometría está habilitada
+      bool isEnabled = await _biometricService.isBiometricEnabled();
+      if (!isEnabled) {
+        throw Exception('La autenticación biométrica no está habilitada');
+      }
+
+      // Obtener credenciales almacenadas (incluye autenticación biométrica)
+      Map<String, String>? credentials = await _biometricService.getStoredCredentials();
+      
+      if (credentials == null) {
+        throw Exception('No se pudieron obtener las credenciales');
+      }
+
+      // Iniciar sesión con las credenciales obtenidas
+      return await signInWithCedulaAndPassword(
+        credentials['cedula']!,
+        credentials['password']!,
+      );
+    } catch (e) {
+      print('Error en login biométrico: ${e.toString()}');
+      if (e is Exception) {
+        rethrow;
+      }
+      throw Exception('Error en la autenticación biométrica');
+    }
+  }
+
+  // NUEVO: Habilitar autenticación biométrica después del login
+  Future<bool> enableBiometricAuth(String cedula, String password) async {
+    try {
+      return await _biometricService.enableBiometric(cedula, password);
+    } catch (e) {
+      print('Error habilitando biometría: $e');
+      return false;
+    }
+  }
+
+  // NUEVO: Deshabilitar autenticación biométrica
+  Future<void> disableBiometricAuth() async {
+    await _biometricService.disableBiometric();
+  }
+
+  // NUEVO: Verificar si la biometría está habilitada
+  Future<bool> isBiometricEnabled() async {
+    return await _biometricService.isBiometricEnabled();
+  }
+
+  // NUEVO: Verificar si hay credenciales guardadas
+  Future<bool> hasStoredCredentials() async {
+    return await _biometricService.hasStoredCredentials();
+  }
+
+  // NUEVO: Obtener descripción del tipo de biometría
+  Future<String> getBiometricTypeDescription() async {
+    return await _biometricService.getBiometricTypeDescription();
+  }
+
+  // NUEVO: Verificar disponibilidad de biometría
+  Future<bool> isBiometricAvailable() async {
+    bool canCheck = await _biometricService.canCheckBiometrics();
+    bool isSupported = await _biometricService.isDeviceSupported();
+    return canCheck && isSupported;
   }
 
   Future<void> resetPassword(String email) async {

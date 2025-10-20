@@ -19,12 +19,38 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   String? _errorMessage;
   bool _obscurePassword = true;
+  
+  // Nuevas variables para biometría
+  bool _isBiometricAvailable = false;
+  bool _isBiometricEnabled = false;
+  bool _hasStoredCredentials = false;
+  String _biometricType = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _checkBiometricAvailability();
+  }
 
   @override
   void dispose() {
     _cedulaController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _checkBiometricAvailability() async {
+    bool isAvailable = await _authService.isBiometricAvailable();
+    bool isEnabled = await _authService.isBiometricEnabled();
+    bool hasCredentials = await _authService.hasStoredCredentials();
+    String biometricType = await _authService.getBiometricTypeDescription();
+
+    setState(() {
+      _isBiometricAvailable = isAvailable;
+      _isBiometricEnabled = isEnabled;
+      _hasStoredCredentials = hasCredentials;
+      _biometricType = biometricType;
+    });
   }
 
   Future<void> _login() async {
@@ -42,14 +68,18 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       if (result != null) {
-        // Mostrar mensaje de éxito
-        ScaffoldMessenger.of(context).showSnackBar(
-          CommonWidgets.buildCustomSnackBar(
-            message: '¡Bienvenido de vuelta!',
-            type: SnackBarType.success,
-          ),
-        );
-        Navigator.pushReplacementNamed(context, '/home');
+        // Preguntar si desea habilitar biometría (solo si está disponible y no habilitada)
+        if (_isBiometricAvailable && !_isBiometricEnabled) {
+          await _showEnableBiometricDialog();
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            CommonWidgets.buildCustomSnackBar(
+              message: '¡Bienvenido de vuelta!',
+              type: SnackBarType.success,
+            ),
+          );
+          Navigator.pushReplacementNamed(context, '/home');
+        }
       } else {
         setState(() {
           _errorMessage = 'Credenciales inválidas. Verifica tu cédula y contraseña.';
@@ -74,6 +104,120 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _loginWithBiometric() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      User? result = await _authService.signInWithBiometric();
+
+      if (result != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          CommonWidgets.buildCustomSnackBar(
+            message: '¡Bienvenido de vuelta!',
+            type: SnackBarType.success,
+          ),
+        );
+        Navigator.pushReplacementNamed(context, '/home');
+      } else {
+        setState(() {
+          _errorMessage = 'No se pudo autenticar con biometría.';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = 'Error de autenticación biométrica.';
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _showEnableBiometricDialog() async {
+    bool? enableBiometric = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppStyles.radiusL),
+          ),
+          title: Row(
+            children: [
+              Icon(
+                Icons.fingerprint,
+                color: AppColors.accentColor,
+                size: 28,
+              ),
+              const SizedBox(width: AppStyles.spacingM),
+              Expanded(
+                child: Text(
+                  'Habilitar $_biometricType',
+                  style: AppStyles.headingSmall,
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            '¿Deseas usar $_biometricType para iniciar sesión más rápidamente en el futuro?',
+            style: AppStyles.bodyMedium,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(
+                'Ahora no',
+                style: AppStyles.buttonMedium.copyWith(
+                  color: AppColors.textSecondaryColor,
+                ),
+              ),
+            ),
+            ElevatedButton(
+              style: AppStyles.accentButtonStyle,
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(
+                'Habilitar',
+                style: AppStyles.buttonMedium.copyWith(
+                  color: AppColors.textOnPrimary,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (enableBiometric == true) {
+      bool success = await _authService.enableBiometricAuth(
+        _cedulaController.text.trim(),
+        _passwordController.text,
+      );
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          CommonWidgets.buildCustomSnackBar(
+            message: '$_biometricType habilitado correctamente',
+            type: SnackBarType.success,
+          ),
+        );
+        await _checkBiometricAvailability();
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          CommonWidgets.buildCustomSnackBar(
+            message: 'No se pudo habilitar $_biometricType',
+            type: SnackBarType.error,
+          ),
+        );
+      }
+    }
+
+    Navigator.pushReplacementNamed(context, '/home');
+  }
+
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
@@ -96,33 +240,33 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Logo y bienvenida
                     _buildHeader(),
                     
                     const SizedBox(height: AppStyles.spacingXL),
                     
-                    // Mensaje de error
                     if (_errorMessage != null) ...[
                       _buildErrorMessage(),
                       const SizedBox(height: AppStyles.spacingL),
                     ],
 
-                    // Formulario
                     _buildForm(),
                     
                     const SizedBox(height: AppStyles.spacingL),
                     
-                    // Botón de login
                     _buildLoginButton(),
+                    
+                    // Botón de biometría (solo si está habilitada)
+                    if (_isBiometricAvailable && _isBiometricEnabled && _hasStoredCredentials) ...[
+                      const SizedBox(height: AppStyles.spacingM),
+                      _buildBiometricButton(),
+                    ],
                     
                     const SizedBox(height: AppStyles.spacingM),
                     
-                    // Enlace olvido contraseña
                     _buildForgotPasswordLink(),
                     
                     const Spacer(),
                     
-                    // Enlace registro
                     _buildRegisterLink(),
                   ],
                 ),
@@ -138,7 +282,6 @@ class _LoginScreenState extends State<LoginScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Logo placeholder (puedes reemplazar con tu logo)
         Center(
           child: Container(
             width: 120,
@@ -214,7 +357,6 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget _buildForm() {
     return Column(
       children: [
-        // Campo cédula
         TextFormField(
           controller: _cedulaController,
           keyboardType: TextInputType.number,
@@ -237,7 +379,6 @@ class _LoginScreenState extends State<LoginScreen> {
         
         const SizedBox(height: AppStyles.spacingL),
         
-        // Campo contraseña
         TextFormField(
           controller: _passwordController,
           obscureText: _obscurePassword,
@@ -297,6 +438,40 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
+  Widget _buildBiometricButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(
+            vertical: 16,
+            horizontal: 24,
+          ),
+          side: BorderSide(
+            color: AppColors.accentColor,
+            width: 2,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppStyles.radiusM),
+          ),
+          minimumSize: const Size(double.infinity, 52),
+        ),
+        onPressed: _isLoading ? null : _loginWithBiometric,
+        icon: Icon(
+          Icons.fingerprint,
+          color: AppColors.accentColor,
+          size: 24,
+        ),
+        label: Text(
+          'Iniciar con $_biometricType',
+          style: AppStyles.buttonLarge.copyWith(
+            color: AppColors.accentColor,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildForgotPasswordLink() {
     return Align(
       alignment: Alignment.centerRight,
@@ -315,31 +490,31 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildRegisterLink() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          '¿No tienes una cuenta? ',
-          style: AppStyles.bodyMedium,
-        ),
-        TextButton(
-          onPressed: () {
-            Navigator.pushNamed(context, '/register');
-          },
-          style: TextButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            minimumSize: const Size(0, 36),
+    Widget _buildRegisterLink() {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            '¿No tienes una cuenta? ',
+            style: AppStyles.bodyMedium,
           ),
-          child: Text(
-            'Regístrate aquí',
-            style: AppStyles.buttonMedium.copyWith(
-              color: AppColors.accentColor,
-              fontWeight: FontWeight.w600,
+          TextButton(
+            onPressed: () {
+              Navigator.pushNamed(context, '/register');
+            },
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size(0, 36),
+            ),
+            child: Text(
+              'Regístrate aquí',
+              style: AppStyles.buttonMedium.copyWith(
+                color: AppColors.accentColor,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
-        ),
-      ],
-    );
+        ],
+      );
+    }
   }
-}

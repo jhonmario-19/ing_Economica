@@ -69,14 +69,18 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Préstamo #${widget.loan.id.substring(0, 6)}',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
+              Expanded(
+                child: Text(
+                  'Préstamo #${widget.loan.id.substring(0, 6)}',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
+              SizedBox(width: 8),
               Container(
                 padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
@@ -92,7 +96,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> {
                   style: TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
-                    fontSize: 12,
+                    fontSize: 11,
                   ),
                 ),
               ),
@@ -103,54 +107,54 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> {
             widget.loan.paymentMethod.toUpperCase(),
             style: TextStyle(
               color: Colors.white70,
-              fontSize: 14,
+              fontSize: 13,
             ),
           ),
           SizedBox(height: 20),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          // Cambiar de Row a Column para evitar desbordamiento
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Monto total',
-                    style: TextStyle(color: Colors.white70, fontSize: 16),
-                  ),
-                  SizedBox(height: 4),
-                  Text(
-                    '\$${NumberFormat('#,###').format(widget.loan.amount)}',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
+              _buildAmountSection(
+                'Monto total',
+                widget.loan.amount,
               ),
-              if (widget.loan.status == 'aprobado')
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      'Pendiente',
-                      style: TextStyle(color: Colors.white70, fontSize: 16),
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      '\$${NumberFormat('#,###').format(widget.loan.pendingAmount)}',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
+              if (widget.loan.status == 'aprobado') ...[
+                SizedBox(height: 16),
+                _buildAmountSection(
+                  'Pendiente',
+                  widget.loan.pendingAmount,
                 ),
+              ],
             ],
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildAmountSection(String label, double amount) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(color: Colors.white70, fontSize: 14),
+        ),
+        SizedBox(height: 4),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            '\$${NumberFormat('#,###').format(amount)}',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -236,20 +240,29 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> {
   Widget _buildDetailRow(String label, String value) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: TextStyle(
-            color: AppColors.textSecondaryColor,
-            fontSize: 14,
+        Expanded(
+          flex: 3,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: AppColors.textSecondaryColor,
+              fontSize: 14,
+            ),
           ),
         ),
-        Text(
-          value,
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: AppColors.textPrimaryColor,
-            fontSize: 14,
+        SizedBox(width: 8),
+        Expanded(
+          flex: 2,
+          child: Text(
+            value,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimaryColor,
+              fontSize: 14,
+            ),
+            textAlign: TextAlign.end,
           ),
         ),
       ],
@@ -335,58 +348,60 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> {
       child: Column(
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Container(
-                    padding: EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: statusColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      payment.paid
-                          ? Icons.check_circle
-                          : isPastDue
-                              ? Icons.warning
-                              : Icons.schedule,
-                      color: statusColor,
-                      size: 20,
-                    ),
-                  ),
-                  SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Cuota ${payment.paymentNumber}',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.textPrimaryColor,
-                        ),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        'Vence: ${DateFormat('dd/MM/yyyy').format(payment.dueDate)}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.textSecondaryColor,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+              Container(
+                padding: EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: statusColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  payment.paid
+                      ? Icons.check_circle
+                      : isPastDue
+                          ? Icons.warning
+                          : Icons.schedule,
+                  color: statusColor,
+                  size: 20,
+                ),
               ),
+              SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Cuota ${payment.paymentNumber}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimaryColor,
+                        fontSize: 14,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Vence: ${DateFormat('dd/MM/yyyy').format(payment.dueDate)}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondaryColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(width: 8),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(
-                    '\$${NumberFormat('#,###').format(payment.amount)}',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                      color: AppColors.textPrimaryColor,
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      '\$${NumberFormat('#,###').format(payment.amount)}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                        color: AppColors.textPrimaryColor,
+                      ),
                     ),
                   ),
                   SizedBox(height: 4),
@@ -405,7 +420,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> {
                       style: TextStyle(
                         color: statusColor,
                         fontWeight: FontWeight.bold,
-                        fontSize: 10,
+                        fontSize: 9,
                       ),
                     ),
                   ),
@@ -528,7 +543,7 @@ class _LoanDetailsScreenState extends State<LoanDetailsScreen> {
             children: [
               Icon(Icons.check_circle, color: Colors.white),
               SizedBox(width: 12),
-              Text('Pago realizado correctamente'),
+              Expanded(child: Text('Pago realizado correctamente')),
             ],
           ),
           backgroundColor: Colors.green,
